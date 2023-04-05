@@ -1,10 +1,8 @@
-// Node.js file system module to read/write files
-const fs = require('fs').promises;
-const path = require('path');
-// PDF library to read PDF files
-const { PDFDocument, convertPDFPageToImage } = require('pdf-lib');
-// Image library to convert PDF pages to images
-const { promisify } = require('util');
+import { promises as fs } from 'fs';
+import path from 'path';
+import { PDFDocument } from 'pdf-lib'
+import { fileURLToPath } from 'url';
+import pdf2img from 'pdf-img-convert';
 
 // Function to export PDF pages as images
 async function exportPDFPagesAsImages(pdfPath, slidePrefix) {
@@ -18,8 +16,12 @@ async function exportPDFPagesAsImages(pdfPath, slidePrefix) {
   ];
 
   let slideCounter = 1;
+  let totalSlides = pdfDoc.getPageCount() * imageSizes.length;
+  let currentSlide = 0;
+  
   for (const pdfPage of pdfDoc.getPages()) {
     const slideName = `${slidePrefix}_slide${slideCounter}`;
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const slideFolderName = path.join(__dirname, slideName);
     await fs.mkdir(slideFolderName, { recursive: true });
 
@@ -29,14 +31,22 @@ async function exportPDFPagesAsImages(pdfPath, slidePrefix) {
 
       const imageFileName = `${slideName}-${imageSize.suffix}.jpeg`;
       const imageFilePath = path.join(imageFolderName, imageFileName);
-      const imageData = await convertPDFPageToImage(pdfPage, { width: imageSize.width, height: imageSize.height });
+      // console.log('### ', slideCounter);
+      const imageData = await pdf2img.convert(pdfPath, {
+        width: imageSize.width,
+        height: imageSize.height,
+        outputformat: 'jpeg',
+        outputdir: imageFolderName,
+        outputname: imageFileName,
+        page_numbers: [slideCounter, slideCounter] // Convert only the current page
+      });
       await fs.writeFile(imageFilePath, imageData);
 
       if (imageSize.suffix === 'slide') {
         const cssContent = `img {
-        max-width: 100%;
-        height: auto;
-      }`;
+          max-width: 100%;
+          height: auto;
+        }`;
         const cssFileName = 'styles.css';
         const cssFilePath = path.join(imageFolderName, 'css', cssFileName);
         await fs.mkdir(path.join(imageFolderName, 'css'), { recursive: true });
@@ -64,16 +74,17 @@ async function exportPDFPagesAsImages(pdfPath, slidePrefix) {
         const htmlFilePath = path.join(imageFolderName, `${slideName}.html`);
         await fs.writeFile(htmlFilePath, htmlContent);
       }
+      currentSlide++;
+      const percentage = Math.floor((currentSlide / totalSlides) * 100);
+      console.log(`Exported ${currentSlide} of ${totalSlides} slides = (${percentage}%).`);
     }
     slideCounter++;
   }
+}
 
-  return Promise.all([...imagesData.values()]); // Return all promises
-  }
-  
-  // Call the function with the PDF file path and slide prefix
-  exportPDFPagesAsImages('./document.pdf', 'Brintellix_id')
-  .then(() => {
+// Call the function with the PDF file path and slide prefix
+exportPDFPagesAsImages('./document.pdf', 'Brintellix_id')
+.then(() => {
   console.log('All PDF pages exported as images successfully!');
   })
   .catch((error) => {
